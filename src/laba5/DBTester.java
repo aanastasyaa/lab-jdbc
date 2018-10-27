@@ -8,6 +8,11 @@ import java.sql.*;
 import java.util.HashMap;
 import java.util.Map;
 
+/**
+* Класс для работы с базой данных HSQLDB с именем groupbd,
+* состоящей из таблиц ITEM (книги) и ITEMGROUP (авторы).
+* Используется JDBC
+*/
 public class DBTester {
     private Connection connection=null;
     public DBTester() {}
@@ -57,7 +62,11 @@ public class DBTester {
         stat.execute("DROP TABLE ITEMGROUP");
         stat.close();
     }
-
+	/**
+	* Единственный публичный метод класса,
+	* в котором создается подключение к БД, 
+	* выполняется метод doWork и закрывается подключение к БД 
+	*/
     public void test() {
         try {
             connection = connectToDB();
@@ -74,7 +83,7 @@ public class DBTester {
         }
     }
 
-    public void viewGroups() throws SQLException {
+    private void viewGroups() throws SQLException {
         Statement statement=connection.createStatement();
         ResultSet set=statement.executeQuery("SELECT ID,TITLE FROM ITEMGROUP");
         if(set.isBeforeFirst())
@@ -85,7 +94,7 @@ public class DBTester {
         statement.close();
     }
 
-    public void viewItems() throws SQLException {
+    private void viewItems() throws SQLException {
         Statement statement=connection.createStatement();
         ResultSet set=statement.executeQuery("SELECT TITLE, GROUPID FROM ITEM");
         if(set.isBeforeFirst())
@@ -133,7 +142,9 @@ public class DBTester {
         prepStat.close();
 
     }
-
+	/**
+	* Функция создания и начального заполнения таблиц, если они отсутствуют в базе
+	*/
     private void createTablesIfNeeded() throws SQLException {
         try(Statement stat = connection.createStatement() ) {
             DatabaseMetaData meta = connection.getMetaData();
@@ -154,7 +165,6 @@ public class DBTester {
                         for (int i = 0; i < inst.length; i++) {
                             if (!inst[i].trim().equals("")) {
                                 stat.execute(inst[i]);
-                                //System.out.println(">>"+inst[i]);
                             }
                         }
                     } catch (IOException e) {
@@ -204,7 +214,14 @@ public class DBTester {
         }
         return true;
     }
-
+	/**
+	* Функция редактирования записей таблицы ITEM с помощью файла,
+	* который имеет следующий формат:
+	* 	Лев Толстой+Война и мир
+	* 	Максим Горький+Детство
+	* 	Агата Кристи-Десять негритят
+	* Файл обрабатывается отдельной транзакцией – если добавить/удалить не получилось, все операции отменяются 
+	*/
     private void changeItemsUseFile(String filename) throws SQLException {
         try(BufferedReader reader=new BufferedReader(new InputStreamReader(new FileInputStream(filename), "cp1251"))) {
             String s;
@@ -236,7 +253,15 @@ public class DBTester {
             connection.setAutoCommit(true);
         }
     }
-
+	
+	/**
+	* Функция редактирования записей таблицы ITEMGROUP с помощью файла,
+	* который имеет следующий формат:
+	* 	+Лев Толстой
+	* 	+Максим Горький
+	* 	-Агата Кристи
+	* Файл обрабатывается отдельной транзакцией – если добавить/удалить не получилось, все операции отменяются 
+	*/
     private void changeGroupsUseFile(String filename) throws SQLException {
         try(BufferedReader reader=new BufferedReader(new InputStreamReader(new FileInputStream(filename), "cp1251"))) {
             String s;
@@ -244,16 +269,10 @@ public class DBTester {
             //нужно запомнить последнюю операцию для каждой группы из файла, именно она определяет действие, которое нужно сделать над группой
             //таким образом совершается только одно действие над одной группой, и нет приоритета операций
             HashMap<String, Character> operationForGroup=new HashMap<String, Character>();
-            /*Set<String> setAdd=new HashSet<String>();
-            Set<String> setRemove=new HashSet<String>();*/
+            
             Statement stat=connection.createStatement(ResultSet.TYPE_SCROLL_SENSITIVE, ResultSet.CONCUR_UPDATABLE); //изменяемый ResultSet
             while ((s = reader.readLine()) != null) {
-                operationForGroup.put(s.substring(1), s.charAt(0));
-                /*boolean isAdd = (s.charAt(0) == '+');
-                s = s.substring(1);
-                if (isAdd)
-                    setAdd.add(s);
-                else setRemove.add(s);*/
+                operationForGroup.put(s.substring(1), s.charAt(0));                
             }
 
             try(ResultSet setGroups=stat.executeQuery("SELECT TITLE FROM ITEMGROUP")) {
@@ -266,10 +285,6 @@ public class DBTester {
                         operationForGroup.remove(title);//не нужно добавлять уже существующую группу в БД
                     }
 
-                    /*if (setAdd.contains(title))
-                        setAdd.remove(title);//не нужно добавлять уже существующую группу в БД
-                    if (setRemove.contains(title))
-                        setGroups.deleteRow();//удаляем группу из БД*/
                 }
                 //добавляем новые группы, если в Map записан '+'
                 for(Map.Entry<String,Character> entry: operationForGroup.entrySet()) {
@@ -279,11 +294,7 @@ public class DBTester {
                         setGroups.insertRow();
                     }
                 }
-                /*for (String group : setAdd) {//добавляем группы, которых нет в БД
-                    setGroups.moveToInsertRow();
-                    setGroups.updateString("TITLE", group);
-                    setGroups.insertRow();
-                }*/
+                
             }
             connection.commit();
             stat.close();
